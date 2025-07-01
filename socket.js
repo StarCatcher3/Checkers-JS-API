@@ -2,8 +2,9 @@
 let clientCount = 0;
 const sessionId = Math.random().toString(36).substring(2,6);
 
-const { JoinRoom, LeaveRoom, GetRoomId, GetRoomSize } = require('./logic');
-const { clients } = require('./state');
+const { SendInitialStates } = require('./gameManager');
+const { JoinRoom, SendJoinMessage, LeaveRoom, GetRoomId, UserReady, UserNotReady } = require('./roomManager');
+const { IsRoomPlaying, clients } = require('./state');
 
 const WebSocket = require('ws');
 const server = new WebSocket.Server({ port: 3000 });
@@ -14,21 +15,18 @@ server.on('connection', (socket) => {
         try {
             data = JSON.parse(message);
 
+            // Update Username
+            if (data.username) {
+                socket.username = data.username;
+            }
+
             // Assign UserId from an existing session
             if (data.firstConnection) {
+                currentRoom = null;
                 if (data.oldUserId && data.oldUserId.substring(0, 4) == sessionId) {
                     socket.userId = data.oldUserId;
-                    if (data.username) socket.username = data.username;
                     currentRoom = GetRoomId(socket.userId);
                     console.log(currentRoom);
-                    if (currentRoom != null) {
-                        socket.send(JSON.stringify({
-                            joinRoom: true,
-                            roomId: currentRoom,
-                            roomSize: GetRoomSize(currentRoom),
-                            message: "User already in room " + currentRoom
-                        }));
-                    }
                 } else {
                     socket.userId = sessionId + clientCount;
                     clientCount++;
@@ -40,11 +38,12 @@ server.on('connection', (socket) => {
                 }
                 clients.set(socket.userId, socket);
                 console.log("Client connected: " + socket.userId);
-            }
-
-            // Update Username
-            if (data.username) {
-                socket.username = data.username;
+                if (currentRoom != null) {
+                    SendJoinMessage(socket, currentRoom);
+                    if (IsRoomPlaying(currentRoom)) {
+                        SendInitialStates(currentRoom);
+                    }
+                }
             }
 
             // Manage Join Room Requests
@@ -55,6 +54,14 @@ server.on('connection', (socket) => {
             // Manage Leave Room Requests
             if (data.leaveRoom && data.userId) {
                 LeaveRoom(data.userId);
+            }
+
+            if (data.ready) {
+                UserReady(socket.userId);
+            }
+
+            if (data.notReady) {
+                UserNotReady(socket.userId);
             }
 
             // Show the message received in the console
@@ -79,6 +86,6 @@ server.on('connection', (socket) => {
 
     socket.on('close', () => {
         console.log("Client disconnected: " + socket.userId);
-        clients.delete(socket.userId); // to be moved elsewhere
+        //clients.delete(socket.userId); // to be moved elsewhere
     })
 })

@@ -1,11 +1,10 @@
-let rooms = new Map();
-let roomSizes = new Map();
+let roomUsersReady = new Map();
 let roomCount = 0;
 
-const { clients } = require('./state');
+const { clients, roomSizes, rooms, SendToRoom, GetRoomUsernames } = require('./state');
+const { StartGame } = require('./gameManager');
 
 function JoinRoom(userId, roomSize) {
-    console.log(userId + " is joining a room of size " + roomSize);
     socket = clients.get(userId);
     if (!socket) {
         return "Client not connected";
@@ -24,38 +23,32 @@ function JoinRoom(userId, roomSize) {
     }
 
     // Check for any rooms that still have space
-    console.log(userId + " is not already in a room");
     for (const [key, value] of rooms) {
         if (roomSizes.get(key) == roomSize && value.size < roomSize) {
-            socket.send(JSON.stringify({
-                joinRoom: true,
-                roomId: key,
-                roomSize: roomSize,
-                message: "User joining room " + key
-            }));
             value.add(userId);
-            RoomUpdate(key);
+            SendJoinMessage(socket, key);
             return;
         }
     }
 
     // Create a new room if neither of the previous cases
-    console.log("A new room is being created for " + userId);
     roomUsers = new Set();
     roomUsers.add(userId);
     rooms.set(roomCount, roomUsers);
+    roomUsersReady.set(roomCount, new Set());
     roomSizes.set(roomCount, roomSize);
+    SendJoinMessage(socket, roomCount);
+    roomCount++;
+    return;
+}
+
+function SendJoinMessage(socket, roomId) {
     socket.send(JSON.stringify({
         joinRoom: true,
-        roomId: roomCount,
-        roomSize: roomSize,
-        message: "User joining room " + roomCount
+        roomSize: GetRoomSize(roomId),
+        message: "User entering room " + roomId
     }));
-    roomCount++;
-    rooms.forEach((value, key) => {
-        console.log("Room " + key + ": size" + roomSizes.get(key) + ": " + Array.from(value).toString());
-    });
-    return;
+    RoomUpdate(roomId);
 }
 
 function LeaveRoom(userId) {
@@ -66,6 +59,9 @@ function LeaveRoom(userId) {
     }
     for (const [key, value] of rooms) {
         if (value.has(userId)) {
+            if (value.size == GetRoomSize(key)) {
+                roomUsersReady.get(key).clear();
+            }
             value.delete(userId);
             socket.send(JSON.stringify({
                 leaveRoom: true,
@@ -73,6 +69,7 @@ function LeaveRoom(userId) {
             }));
             if (value.size == 0) {
                 rooms.delete(key);
+                roomUsersReady.delete(key);
             } else {
                 RoomUpdate(key);
             }
@@ -87,18 +84,32 @@ function LeaveRoom(userId) {
 }
 
 function RoomUpdate(roomId) {
-    console.log("Room Update Information triggered");
-    rooms.get(roomId).forEach((userId) => {
-        socket = clients.get(userId);
-        if (!socket) {
-            console.log("Client not connected");
-            return;
+    SendToRoom(roomId, {
+        roomUpdate: true,
+        users: GetRoomUsernames(roomId),
+        readyUsers: GetRoomReadyUsernames(roomId)
+    });
+}
+
+function UserReady(userId) {
+    roomId = GetRoomId(userId);
+    roomReadies = roomUsersReady.get(roomId);
+    if (roomReadies) {
+        roomReadies.add(userId);
+        RoomUpdate(roomId);
+        if (roomReadies.size == GetRoomSize(roomId)) {
+            StartGame(roomId);
         }
-        socket.send(JSON.stringify({
-            RoomUpdate: true,
-            message: "Users in this room: " + Array.from(rooms.get(roomId)).map((userId) => {user = clients.get(userId); return user.username ? user.username : user.userId}).toString()
-        }));
-    })
+    }
+}
+
+function UserNotReady(userId) {
+    roomId = GetRoomId(userId);
+    roomReadies = roomUsersReady.get(roomId);
+    if (roomReadies && roomReadies.has(userId)) {
+        roomReadies.delete(userId);
+        RoomUpdate(roomId);
+    }
 }
 
 function GetRoomId(userId) {
@@ -113,4 +124,8 @@ function GetRoomSize(roomId) {
     return roomSizes.get(roomId);
 }
 
-module.exports = { JoinRoom, LeaveRoom, GetRoomId, GetRoomSize }
+function GetRoomReadyUsernames(roomId) {
+    return Array.from(roomUsersReady.get(roomId)).map((userId) => {user = clients.get(userId); return user.username ? user.username : user.userId});
+}
+
+module.exports = { JoinRoom, SendJoinMessage, LeaveRoom, GetRoomId, GetRoomSize, UserReady, UserNotReady }
