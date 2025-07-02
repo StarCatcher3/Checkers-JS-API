@@ -2,7 +2,7 @@
 let clientCount = 0;
 const sessionId = Math.random().toString(36).substring(2,6);
 
-const { SendInitialStates } = require('./gameManager');
+const { SendInitialStates, UpdateCheckers } = require('./gameManager');
 const { JoinRoom, SendJoinMessage, LeaveRoom, GetRoomId, UserReady, UserNotReady } = require('./roomManager');
 const { IsRoomPlaying, clients } = require('./state');
 
@@ -26,7 +26,6 @@ server.on('connection', (socket) => {
                 if (data.oldUserId && data.oldUserId.substring(0, 4) == sessionId) {
                     socket.userId = data.oldUserId;
                     currentRoom = GetRoomId(socket.userId);
-                    console.log(currentRoom);
                 } else {
                     socket.userId = sessionId + clientCount;
                     clientCount++;
@@ -62,6 +61,10 @@ server.on('connection', (socket) => {
 
             if (data.notReady) {
                 UserNotReady(socket.userId);
+            }
+
+            if (data.gameStateUpdate) {
+                UpdateCheckers(GetRoomId(socket.userId), data.checkers);
             }
 
             // Show the message received in the console

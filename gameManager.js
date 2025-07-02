@@ -1,4 +1,5 @@
 let checkers = new Map();
+let activePlayerId = new Map();
 
 const { roomSizes, SendToRoom, GetRoomUsernames, SetRoomPlaying, roomPlayerOrder } = require("./state");
 
@@ -9,6 +10,7 @@ function StartGame(roomId) {
         playerOrder.push(user);
     });
     roomPlayerOrder.set(roomId, playerOrder);
+    activePlayerId.set(roomId, 0);
 
     newCheckers = new Set();
     switch (roomSizes.get(roomId)) {
@@ -16,12 +18,12 @@ function StartGame(roomId) {
             for (i = 0; i < 8; i++) {
                 for (j = 0; j < 3; j++) {
                     if ((i + j) % 2 == 0) {
-                        newCheckers.add({x: i, y: j, p: 0});
+                        newCheckers.add({x: i, y: j, p: 0, king: false});
                     }
                 }
                 for (j = 5; j < 8; j++) {
                     if ((i + j) % 2 == 0) {
-                        newCheckers.add({x: i, y: j, p: 1});
+                        newCheckers.add({x: i, y: j, p: 1, king: false});
                     }
                 }
             }
@@ -30,24 +32,24 @@ function StartGame(roomId) {
             for (i = 4; i < 12; i++) {
                 for (j = 0; j < 3; j++) {
                     if ((i + j) % 2 == 0) {
-                        newCheckers.add({x: i, y: j, p: 0});
+                        newCheckers.add({x: i, y: j, p: 0, king: false});
                     }
                 }
                 for (j = 13; j < 16; j++) {
                     if ((i + j) % 2 == 0) {
-                        newCheckers.add({x: i, y: j, p: 1});
+                        newCheckers.add({x: i, y: j, p: 2, king: false});
                     }
                 }
             }
             for (i = 4; i < 12; i++) {
                 for (j = 0; j < 3; j++) {
                     if ((i + j) % 2 == 0) {
-                        newCheckers.add({x: j, y: i, p: 2});
+                        newCheckers.add({x: j, y: i, p: 1, king: false});
                     }
                 }
                 for (j = 13; j < 16; j++) {
                     if ((i + j) % 2 == 0) {
-                        newCheckers.add({x: j, y: i, p: 3});
+                        newCheckers.add({x: j, y: i, p: 3, king: false});
                     }
                 }
             }
@@ -56,12 +58,12 @@ function StartGame(roomId) {
             for (i = 0; i < 8; i++) {
                 for (j = 0; j < 3; j++) {
                     if ((i + j) % 2 == 0) {
-                        newCheckers.add({x: i, y: j, p: 0, z: 0});
-                        newCheckers.add({x: i, y: j, p: 1, z: 1});
-                        newCheckers.add({x: i, y: j, p: 2, z: 2});
-                        newCheckers.add({x: i, y: j, p: 3, z: 3});
-                        newCheckers.add({x: i, y: j, p: 4, z: 4});
-                        newCheckers.add({x: i, y: j, p: 5, z: 5});
+                        newCheckers.add({x: i, y: j, p: 0, z: 0, king: false});
+                        newCheckers.add({x: i, y: j, p: 1, z: 1, king: false});
+                        newCheckers.add({x: i, y: j, p: 2, z: 2, king: false});
+                        newCheckers.add({x: i, y: j, p: 3, z: 3, king: false});
+                        newCheckers.add({x: i, y: j, p: 4, z: 4, king: false});
+                        newCheckers.add({x: i, y: j, p: 5, z: 5, king: false});
                     }
                 }
             }
@@ -86,8 +88,20 @@ function UpdateGameState(roomId) {
     SendToRoom(roomId, {
         gameStateUpdate: true,
         checkers: Array.from(checkers.get(roomId)),
+        playerId: activePlayerId.get(roomId),
         message: "Game State Update"
     });
 }
 
-module.exports = { StartGame, SendInitialStates }
+function UpdateCheckers(roomId, newCheckers) {
+    newActivePlayer = activePlayerId.get(roomId) + 1;
+    if (newActivePlayer >= roomSizes.get(roomId)) {
+        activePlayerId.set(roomId, 0);
+    } else {
+        activePlayerId.set(roomId, newActivePlayer);
+    }
+    checkers.set(roomId, new Set(newCheckers));
+    UpdateGameState(roomId);
+}
+
+module.exports = { StartGame, SendInitialStates, UpdateCheckers }
