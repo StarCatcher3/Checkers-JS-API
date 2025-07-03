@@ -1,19 +1,18 @@
-let checkers = new Map();
-let activePlayerId = new Map();
-
-const { roomSizes, SendToRoom, GetRoomUsernames, SetRoomPlaying, roomPlayerOrder } = require("./state");
+const { rooms, SendToRoom, GetUsernames } = require("./state");
 
 function StartGame(roomId) {
     console.log("Starting game");
-    playerOrder = [];
-    GetRoomUsernames(roomId).forEach(user => {
-        playerOrder.push(user);
+    let room = rooms.get(roomId);
+    room.playerOrder = [];
+    GetUsernames(room.users).forEach(user => {
+        room.playerOrder.push(user);
     });
-    roomPlayerOrder.set(roomId, playerOrder);
-    activePlayerId.set(roomId, 0);
+    room.playersLeft = Array.from({ length: room.size }, (_, i) => i);
+    room.activePlayerId = 0;
+    room.gameOver = false;
 
     newCheckers = new Set();
-    switch (roomSizes.get(roomId)) {
+    switch (room.size) {
         case 2:
             for (i = 0; i < 8; i++) {
                 for (j = 0; j < 3; j++) {
@@ -29,25 +28,25 @@ function StartGame(roomId) {
             }
             break;
         case 4:
-            for (i = 4; i < 12; i++) {
+            for (i = 3; i < 11; i++) {
                 for (j = 0; j < 3; j++) {
                     if ((i + j) % 2 == 0) {
                         newCheckers.add({x: i, y: j, p: 0, king: false});
                     }
                 }
-                for (j = 13; j < 16; j++) {
+                for (j = 11; j < 14; j++) {
                     if ((i + j) % 2 == 0) {
                         newCheckers.add({x: i, y: j, p: 2, king: false});
                     }
                 }
             }
-            for (i = 4; i < 12; i++) {
+            for (i = 3; i < 11; i++) {
                 for (j = 0; j < 3; j++) {
                     if ((i + j) % 2 == 0) {
                         newCheckers.add({x: j, y: i, p: 1, king: false});
                     }
                 }
-                for (j = 13; j < 16; j++) {
+                for (j = 11; j < 14; j++) {
                     if ((i + j) % 2 == 0) {
                         newCheckers.add({x: j, y: i, p: 3, king: false});
                     }
@@ -69,39 +68,98 @@ function StartGame(roomId) {
             }
             break;
     }
-    checkers.set(roomId, newCheckers);
+    room.checkers = newCheckers;
 
-    SetRoomPlaying(roomId, true);
+    room.playing = true;
     SendInitialStates(roomId);
 }
 
 function SendInitialStates(roomId) {
     SendToRoom(roomId, {
         gameStart: true,
-        playerOrder: roomPlayerOrder.get(roomId),
-        message: "Initial Game State"
+        playerOrder: rooms.get(roomId).playerOrder
     });
     UpdateGameState(roomId);
 }
 
+function SendInitialStatesToUser(roomId, socket) {
+    let room = rooms.get(roomId);
+    socket.send(JSON.stringify({
+        gameStart: true,
+        playerOrder: room.playerOrder
+    }));
+    socket.send(JSON.stringify({
+        gameStateUpdate: true,
+        checkers: Array.from(room.checkers),
+        playerId: room.activePlayerId
+    }));
+    socket.send(JSON.stringify({
+        gameStateUpdate: true,
+        checkers: Array.from(room.checkers),
+        playerId: room.activePlayerId
+    }));
+}
+
 function UpdateGameState(roomId) {
+    let room = rooms.get(roomId);
     SendToRoom(roomId, {
         gameStateUpdate: true,
-        checkers: Array.from(checkers.get(roomId)),
-        playerId: activePlayerId.get(roomId),
-        message: "Game State Update"
+        checkers: Array.from(room.checkers),
+        playerId: room.activePlayerId
+    });
+}
+
+function UpdatePlayersLeft(roomId) {
+    let room = rooms.get(roomId);
+    SendToRoom(roomId, {
+        playersLeft: room.playersLeft
     });
 }
 
 function UpdateCheckers(roomId, newCheckers) {
-    newActivePlayer = activePlayerId.get(roomId) + 1;
-    if (newActivePlayer >= roomSizes.get(roomId)) {
-        activePlayerId.set(roomId, 0);
-    } else {
-        activePlayerId.set(roomId, newActivePlayer);
+    let room = rooms.get(roomId);
+    room.checkers = new Set(newCheckers);
+    let playersLeft = [];
+    for (const checker of newCheckers) {
+        if (!playersLeft.includes(checker.p)) {
+            playersLeft.push(checker.p);
+        }
+    };
+    if (playersLeft.length < room.playersLeft.length) {
+        room.playersLeft = playersLeft;
+        UpdatePlayersLeft(roomId);
     }
-    checkers.set(roomId, new Set(newCheckers));
-    UpdateGameState(roomId);
+
+    if (room.playersLeft.length > 1) {
+        UpdateActivePlayer(room);
+        UpdateGameState(roomId);
+    } else {
+        EndGame(roomId, room.playersLeft[0]);
+    }
 }
 
-module.exports = { StartGame, SendInitialStates, UpdateCheckers }
+function UpdateActivePlayer(room) {
+    newActivePlayer = room.activePlayerId + 1;
+    if (newActivePlayer >= room.size) {
+        room.activePlayerId = 0;
+    } else {
+        room.activePlayerId = newActivePlayer;
+    }
+    if (!room.playersLeft.includes(room.activePlayerId)) {
+        UpdateActivePlayer(room);
+    }
+}
+
+function EndGame(roomId, playerId) {
+    console.log("Ending Game, the winner is: " + playerId);
+    let room = rooms.get(roomId);
+    SendToRoom(roomId, {
+        gameEnd: true,
+        checkers: Array.from(room.checkers),
+        winnerId: playerId
+    });
+    room.usersReady = new Set();
+    room.gameOver = true;
+}
+
+module.exports = { StartGame, EndGame, SendInitialStates, SendInitialStatesToUser, UpdateCheckers }

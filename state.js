@@ -1,11 +1,8 @@
 let clients = new Map();
-let roomSizes = new Map();
 let rooms = new Map();
-let roomPlaying = new Map();
-let roomPlayerOrder = new Map();
 
 function SendToRoom(roomId, json) {
-    rooms.get(roomId).forEach((userId) => {
+    rooms.get(roomId).users.forEach((userId) => {
         socket = clients.get(userId);
         if (!socket) {
             console.log("Client not connected: " + userId);
@@ -15,16 +12,13 @@ function SendToRoom(roomId, json) {
     })
 }
 
-function GetRoomUsernames(roomId) {
-    return Array.from(rooms.get(roomId)).map((userId) => {user = clients.get(userId); return user.username ? user.username : user.userId});
+function GetUsernames(userIds) {
+    return Array.from(userIds).map((userId) => {user = clients.get(userId); return user.username ? user.username : user.userId});
 }
 
 function IsRoomPlaying(roomId) {
-    return roomPlaying.get(roomId);
+    let room = rooms.get(roomId);
+    return room.playing && !room.gameOver;
 }
 
-function SetRoomPlaying(roomId, bool) {
-    roomPlaying.set(roomId, bool);
-}
-
-module.exports = { clients, roomSizes, rooms, SendToRoom, GetRoomUsernames, IsRoomPlaying, SetRoomPlaying, roomPlayerOrder }
+module.exports = { clients, rooms, SendToRoom, GetUsernames, IsRoomPlaying }

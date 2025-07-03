@@ -1,8 +1,9 @@
 
 let clientCount = 0;
 const sessionId = Math.random().toString(36).substring(2,6);
+let userTimeouts = new Map();
 
-const { SendInitialStates, UpdateCheckers } = require('./gameManager');
+const { SendInitialStatesToUser, UpdateCheckers } = require('./gameManager');
 const { JoinRoom, SendJoinMessage, LeaveRoom, GetRoomId, UserReady, UserNotReady } = require('./roomManager');
 const { IsRoomPlaying, clients } = require('./state');
 
@@ -26,6 +27,8 @@ server.on('connection', (socket) => {
                 if (data.oldUserId && data.oldUserId.substring(0, 4) == sessionId) {
                     socket.userId = data.oldUserId;
                     currentRoom = GetRoomId(socket.userId);
+                    let oldUserTimeout = userTimeouts.get(socket.userId);
+                    clearTimeout(oldUserTimeout);
                 } else {
                     socket.userId = sessionId + clientCount;
                     clientCount++;
@@ -40,7 +43,7 @@ server.on('connection', (socket) => {
                 if (currentRoom != null) {
                     SendJoinMessage(socket, currentRoom);
                     if (IsRoomPlaying(currentRoom)) {
-                        SendInitialStates(currentRoom);
+                        SendInitialStatesToUser(currentRoom, socket);
                     }
                 }
             }
@@ -74,11 +77,6 @@ server.on('connection', (socket) => {
                     message: "Message Received from user " + (socket.username ? socket.username : socket.userId) + "!"
                 }));
             }
-            
-            /* 
-            socket.send(JSON.stringify({
-                message: "All Connected Clients: " + Array.from(clients.keys()).toString()
-            })); */
 
         } catch (error) {
             socket.send(JSON.stringify({
@@ -89,6 +87,9 @@ server.on('connection', (socket) => {
 
     socket.on('close', () => {
         console.log("Client disconnected: " + socket.userId);
-        //clients.delete(socket.userId); // to be moved elsewhere
+        userTimeouts.set(socket.userId, setTimeout(() => {
+            LeaveRoom(socket.userId);
+            clients.delete(socket.userId);
+        }, 30000));
     })
 })
