@@ -13,7 +13,7 @@ function SendToRoom(roomId, json) {
 }
 
 function GetUsernames(userIds) {
-    return Array.from(userIds).map((userId) => {user = clients.get(userId); return user.username ? user.username : user.userId});
+    return Array.from(userIds).map((userId) => {user = clients.get(userId); return user.username ? user.username : ("User " + user.userId.slice(4))});
 }
 
 function IsRoomPlaying(roomId) {
